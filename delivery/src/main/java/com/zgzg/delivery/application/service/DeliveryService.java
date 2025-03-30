@@ -63,28 +63,36 @@ public class DeliveryService {
 		List<RouteDTO> hubRoutes = hubClient.getHubRoutes(delivery.getOriginHubId(),
 			delivery.getDestinationHubId());
 
-		// 3. 배송 생성과 동시에 슬랙 알림 전송
 		List<String> intermediateHubs = new ArrayList<>();
 
-		// 배송 경로 저장 및 첫 번째 배송 경로에 배송 담당자 할당
-		for (RouteDTO hubRoute : hubRoutes) {
-			DeliveryRouteLog route = deliveryRouteLogRepository.save(hubRoute.toEntity(savedDelivery));
+		try {
+			// 배송 경로 저장 및 첫 번째 배송 경로에 배송 담당자 할당
+			for (RouteDTO hubRoute : hubRoutes) {
+				DeliveryRouteLog route = deliveryRouteLogRepository.save(hubRoute.toEntity(savedDelivery));
 
-			if (hubRoute.getSequence() == 1) {
-				route.assignDeliveryPerson(deliver.getDeliveryUserId(), deliver.getDeliverySlackUsername());
-				savedDelivery.addOriginHubName(hubRoute.getStartHubName());
-			} else if (hubRoute.getSequence() == hubRoutes.size() - 1) {
-				savedDelivery.addDestinationHubName(hubRoute.getEndHubName());
+				if (hubRoute.getSequence() == 1) {
+					route.assignDeliveryPerson(deliver.getDeliveryUserId(), deliver.getDeliverySlackUsername());
+					savedDelivery.addOriginHubName(hubRoute.getStartHubName());
+				} else if (hubRoute.getSequence() == hubRoutes.size() - 1) {
+					savedDelivery.addDestinationHubName(hubRoute.getEndHubName());
+				}
+				if (hubRoute.getSequence() != 0 && hubRoute.getSequence() != hubRoutes.size() - 1) {
+					intermediateHubs.add(hubRoute.getEndHubName());
+				}
 			}
-			if (hubRoute.getSequence() != 0 && hubRoute.getSequence() != hubRoutes.size() - 1) {
-				intermediateHubs.add(hubRoute.getEndHubName());
-			}
+		} catch (Exception e) {
+			// 배송 경로 생성 실패 시 배송 담당자 할당 롤백
+			DeliveryUserRequestDTO deliverRequestDTO = DeliveryUserRequestDTO.completeDelivery(deliver.getHubId());
+			deliveryPersonClient.completeDeliveryPerson(deliver.getDeliveryUserId(), deliverRequestDTO);
+			// 배송 상태 변경 : 배송 취소
+			savedDelivery.cancelDelivery();
 		}
 
-		// 슬랙 메시지 전송
-		GenerateMessageRequest messageRequest = GenerateMessageRequest.generate(requestDTO, savedDelivery,
-			intermediateHubs);
-		slackClient.createSlackMessage(messageRequest);
+		// 3. 배송 생성과 동시에 슬랙 알림 전송
+		// // 슬랙 메시지 전송
+		// GenerateMessageRequest messageRequest = GenerateMessageRequest.generate(requestDTO, savedDelivery,
+		// 	intermediateHubs);
+		// slackClient.createSlackMessage(messageRequest);
 
 		return savedDelivery.getDeliveryId();
 	}
@@ -192,7 +200,7 @@ public class DeliveryService {
 		log.info("경로 기록");
 
 		// 업체 배송 담당자 상태 변경
-		DeliveryUserRequestDTO requestDTO = new DeliveryUserRequestDTO().completeDelivery(route.getEndHubId());
+		DeliveryUserRequestDTO requestDTO = DeliveryUserRequestDTO.completeDelivery(route.getEndHubId());
 		log.info("deliveryPersonClient");
 		deliveryPersonClient.completeDeliveryPerson(route.getDeliveryPersonId(), requestDTO);
 		log.info("deliveryPersonClient Complete");

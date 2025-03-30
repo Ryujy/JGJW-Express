@@ -12,9 +12,11 @@ import com.zgzg.order.infrastructure.client.req.ProductStockRequestDTO;
 import com.zgzg.order.infrastructure.client.res.ProductResponseDTO;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class ProductClientImpl implements ProductClient {
 	private final FeignProductClient feignProductClient;
 
@@ -48,6 +50,7 @@ public class ProductClientImpl implements ProductClient {
 		for (OrderDetail detail : productList) {
 			ProductStockRequestDTO requestDTO = new ProductStockRequestDTO(detail.getProductId(), detail.getQuantity());
 			ApiResponseData<String> response = feignProductClient.increaseProduct(requestDTO);
+			log.info("product increase : {}, {}", requestDTO.getProductStock(),response.getMessage());
 			if (response.getCode() != 6020) {
 				return false;
 			}

@@ -49,8 +49,7 @@ public class OrderService {
 
 	@Transactional
 	public UUID createOrder(CreateOrderRequestDto requestDto) {
-
-		// todo. 상품 재고 확인
+		// 상품 재고 확인
 		boolean possibleOrder = productClient.getProduct(requestDto.getProductList());
 		if (!possibleOrder) {
 			throw new BaseException(ORDER_PRODUCT_FAIL);
@@ -61,36 +60,43 @@ public class OrderService {
 		CompanyResponseDTO receiver = companyClient.getCompany(requestDto.getReceiverCompanyId());
 		log.info("supplier: {} , receiver: {}", supplier.getHub_id(), receiver.getHub_id());
 
-		// todo. 상품 차감
-		boolean isSuccess = productClient.reduceProduct(requestDto.getProductList());
-		if (!isSuccess) {
-			throw new BaseException(ORDER_DECREASE_PRODUCT_FAIL);
-		}
-
-		// 주문 생성
 		Order order = requestDto.toEntity(requestDto, supplier.getHub_id());
-		Order savedOrder = orderRepository.save(order);
+		UUID orderId = null;
+		try{
+			// 1. 상품 재고 차감
+			boolean isSuccess = productClient.reduceProduct(requestDto.getProductList());
+			if (!isSuccess) {
+				throw new BaseException(ORDER_DECREASE_PRODUCT_FAIL);
+			}
 
-		// 슬랙 메시지 요청에 필요한 정보(배송으로 넘길 정보)
-		Integer quantity = 0;
+			// 2. 주문 생성
+			Order savedOrder = orderRepository.save(order);
+			if(savedOrder.getOrderId() == null) {
+				throw new BaseException(ORDER_NOT_FOUND);
+			}
 
-		// 주문 상세 생성
-		for (OrderDetailDTO orderDetailDTO : requestDto.getProductList()) {
-			OrderDetail orderDetail = orderDetailDTO.toEntity(order);
-			quantity += orderDetail.getQuantity();
-			orderRepository.saveDetail(orderDetail);
+			String productName =
+				requestDto.getProductList().get(0).getProductName() + "외 " + (requestDto.getProductList().size() - 1) + "개";
+			CreateDeliveryRequestDTO deliveryRequestDTO = new CreateDeliveryRequestDTO(savedOrder, supplier,
+				receiver, productName, requestDto.getProductList().size());
+
+			// 3. 배송 생성
+			UUID deliveryId = deliveryClient.createDelivery(deliveryRequestDTO);
+			// 생성된 배송 id 주문에 저장
+			savedOrder.addDeliveryOrder(deliveryId);
+			orderId = savedOrder.getOrderId();
+
+		} catch (Exception e){
+			// 재고 차감 롤백
+			boolean isSuccess = productClient.increaseProduct(requestDto.toDetailEntity());
+			log.info("Order Service : 재고 차감 롤백 : {}", isSuccess);
+			if (!isSuccess) {
+				throw new BaseException(ORDER_INCREASE_PRODUCT_FAIL);
+			}
 		}
 
-		String productName =
-			requestDto.getProductList().get(0).getProductName() + "외 " + (requestDto.getProductList().size() - 1) + "개";
-		CreateDeliveryRequestDTO deliveryRequestDTO = new CreateDeliveryRequestDTO(savedOrder, supplier,
-			receiver, productName, quantity);
-		// 배송 생성 요청
-		UUID deliveryId = deliveryClient.createDelivery(deliveryRequestDTO);
-		// 생성된 배송 id 주문에 저장
-		savedOrder.addDeliveryOrder(deliveryId);
+		return orderId;
 
-		return savedOrder.getOrderId();
 	}
 
 	@Transactional

@@ -26,4 +26,13 @@ public class OrderDetailDTO {
 			.productPrice(productPrice)
 			.build();
 	}
+
+	public OrderDetail convertEntity() {
+		return OrderDetail.builder()
+			.productId(this.getProductId())
+			.productName(this.getProductName())
+			.quantity(this.getQuantity())
+			.productPrice(this.getProductPrice())
+			.build();
+	}
 }

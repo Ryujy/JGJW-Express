@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import feign.Logger;
+import feign.Retryer;
 import lombok.extern.slf4j.Slf4j;
 
 @Configuration
@@ -18,6 +19,9 @@ public class OpenFeignConfig {
 	@Autowired
 	private ObjectMapper objectMapper;
 
+	@Autowired
+	private FeignClientRetryConfig retryConfig;
+
 	@Bean
 	public FeignClientErrorDecoder feignErrorDecoder() {
 		return new FeignClientErrorDecoder(objectMapper);
@@ -26,5 +30,10 @@ public class OpenFeignConfig {
 	@Bean
 	Logger.Level feignLoggerLevel() {
 		return Logger.Level.FULL;
+	}
+
+	@Bean
+	public Retryer retryer() {
+		return retryConfig.retryer();
 	}
 }
